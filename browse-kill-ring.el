@@ -175,38 +175,6 @@ if non-nil, then display leftmost(last) duplicate items in `kill-ring'."
   :type 'boolean
   :group 'browse-kill-ring)
 
-(defadvice kill-new (around browse-kill-ring-no-kill-new-duplicates)
-  "An advice for not adding duplicate elements to `kill-ring'.
-Even after being \"activated\", this advice will only modify the
-behavior of `kill-new' when `browse-kill-ring-no-duplicates'
-is non-nil."
-  (if browse-kill-ring-no-duplicates
-      (setq kill-ring (delete (ad-get-arg 0) kill-ring)))
-  ad-do-it)
-
-(defcustom browse-kill-ring-no-duplicates nil
-  "If non-nil, then the `b-k-r-no-kill-new-duplicates' advice will operate.
-This means that duplicate entries won't be added to the `kill-ring'
-when you call `kill-new'.
-
-If you set this variable via customize, the advice will be activated
-or deactivated automatically.  Otherwise, to enable the advice, add
-
-B (ad-enable-advice 'kill-new 'around 'browse-kill-ring-no-kill-new-duplicates)
- (ad-activate 'kill-new)
-
-to your init file."
-  :type 'boolean
-  :set (lambda (symbol value)
-         (set symbol value)
-         (if value
-             (ad-enable-advice 'kill-new 'around
-                               'browse-kill-ring-no-kill-new-duplicates)
-           (ad-disable-advice 'kill-new 'around
-                              'browse-kill-ring-no-kill-new-duplicates))
-         (ad-activate 'kill-new))
-  :group 'browse-kill-ring)
-
 (defcustom browse-kill-ring-depropertize nil
   "If non-nil, remove text properties from `kill-ring' items.
 This only changes the items for display and insertion from
@@ -599,11 +567,11 @@ case retun nil."
   (interactive "p")
   (browse-kill-ring-forward (- arg)))
 
-(defun browse-kill-ring-read-regexp (msg)
+(defun browse-kill-ring-read-regexp (msg &optional empty-is-nil-p)
   (let* ((default (car regexp-history))
          (input
           (read-from-minibuffer
-           (if default
+           (if (and default (not empty-is-nil-p))
                (format "%s for regexp (default `%s'): "
                        msg
                        default)
@@ -611,9 +579,10 @@ case retun nil."
            nil
            nil
            nil
-           'regexp-history)))
+           'regexp-history
+           (if empty-is-nil-p default nil))))
     (if (equal input "")
-        default
+        (if empty-is-nil-p nil default)
       input)))
 
 (defun browse-kill-ring-search-forward (regexp &optional backwards)
@@ -885,8 +854,8 @@ reselects ENTRY in the `*Kill Ring*' buffer."
 (defun browse-kill-ring-occur (regexp)
   "Display all `kill-ring' entries matching REGEXP."
   (interactive
-   (list
-    (browse-kill-ring-read-regexp "Display kill ring entries matching")))
+   (list (browse-kill-ring-read-regexp
+          "Display kill ring entries matching" t)))
   (assert (eq major-mode 'browse-kill-ring-mode))
   (browse-kill-ring-setup (current-buffer)
                           browse-kill-ring-original-buffer
@@ -1111,8 +1080,9 @@ it's turned on."
             (set-buffer-modified-p nil)
             (goto-char (point-min))
             (browse-kill-ring-forward 0)
-            (when regexp
-              (setq mode-name (concat "Kill Ring [" regexp "]")))
+            (setq mode-name (if regexp
+                                (concat "Kill Ring [" regexp "]")
+                              "Kill Ring"))
             (run-hooks 'browse-kill-ring-hook)))
       (progn
         (setq buffer-read-only t)))))
@@ -1146,18 +1116,19 @@ start of the buffer."
   "Display items in the `kill-ring' in another buffer."
   (interactive)
   (if (eq major-mode 'browse-kill-ring-mode)
-      (message "Already viewing the kill ring")
-    (let* ((orig-win (selected-window))
-           (orig-buf (window-buffer orig-win))
-           (buf (get-buffer-create "*Kill Ring*"))
-           (kill-ring-yank-pointer-string
-            (if kill-ring-yank-pointer
-                (substring-no-properties (car kill-ring-yank-pointer)))))
-      (browse-kill-ring-setup buf orig-buf orig-win)
-      (pop-to-buffer buf)
-      (browse-kill-ring-resize-window)
-      (unless (eq kill-ring kill-ring-yank-pointer)
-        (browse-kill-ring-find-entry kill-ring-yank-pointer-string)))))
+      (error "Already viewing the kill ring"))
+
+  (let* ((orig-win (selected-window))
+         (orig-buf (window-buffer orig-win))
+         (buf (get-buffer-create "*Kill Ring*"))
+         (kill-ring-yank-pointer-string
+          (if kill-ring-yank-pointer
+              (substring-no-properties (car kill-ring-yank-pointer)))))
+    (browse-kill-ring-setup buf orig-buf orig-win)
+    (pop-to-buffer buf)
+    (browse-kill-ring-resize-window)
+    (unless (eq kill-ring kill-ring-yank-pointer)
+      (browse-kill-ring-find-entry kill-ring-yank-pointer-string))))
 
 (provide 'browse-kill-ring)
 
